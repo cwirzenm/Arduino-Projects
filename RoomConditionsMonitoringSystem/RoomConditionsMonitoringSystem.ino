@@ -21,21 +21,24 @@
 #define SCREEN_HEIGHT 64    // OLED display height, in pixels
 #define OLED_RESET    32    // Reset pin
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address;
-#define MQ135_Sensor  25
+#define PIN_MQ135     A2
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET); // OLED software I2C
 Adafruit_BME280 bme(BME_CS, BME_MOSI, BME_MISO, BME_SCK);                 // Sensor software SPI
 
-// Air quality variables
-const unsigned offset = 64;  // variable taken from the min-co2 calibration
+// Air condition variables
+const unsigned offset = 1622;  // variable taken from the min-co2 calibration
+int co2Level;
 
 // WiFi details
-#define WIFI_SSID "WIFI"
-#define WIFI_PASSWORD "PASSWORD"
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
+#define SECOND_WIFI_SSID ""
+#define SECOND_WIFI_PASSWORD ""
 
 // Time variables
 const char* ntpServer = "pool.ntp.org";
-const int gmtOffset_sec = 3600;
+const int gmtOffset_sec = 0;
 struct tm timeinfo;
  
 void setup(){
@@ -44,6 +47,7 @@ void setup(){
   pinMode(RED_LED, OUTPUT);
   pinMode(GREEN_LED, OUTPUT);
   pinMode(BLUE_LED, OUTPUT);
+  pinMode(PIN_MQ135, INPUT);
 
   // Light up the LEDs
   digitalWrite(RED_LED, HIGH);
@@ -62,9 +66,6 @@ void setup(){
   // Init the BME sensor
   unsigned status;
   status = bme.begin(0x76, &Wire);
-
-  // Init the MQ135 sensor
-  pinMode(MQ135_Sensor, INPUT);
 
   // Init the OLED
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -88,10 +89,23 @@ void setup(){
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   display.print("Connecting to Wi-Fi");
   display.display();
+  int wait = 0;
   while (WiFi.status() != WL_CONNECTED) {
+    if (wait == 15) {
+      WiFi.begin(SECOND_WIFI_SSID, SECOND_WIFI_PASSWORD);
+    } else if (wait > 30) {
+      display.clearDisplay();                     // Clear the buffer
+      display.setTextSize(1);                     // Normal 1:1 pixel scale
+      display.setTextColor(SSD1306_WHITE);        // Draw white text
+      display.setCursor(10,4);                     // Start at top-left corner
+      display.print("Cannot find Wi-Fi");
+      display.display();
+      for(;;);
+    }
     display.print(".");
     display.display();
-    delay(300);
+    delay(333);
+    wait++;
   }
   display.clearDisplay();   // Clear the buffer
   display.println();
@@ -126,7 +140,7 @@ void printReadings() {
   display.setTextSize(1);                     // Normal 1:1 pixel scale
   display.setTextColor(SSD1306_WHITE);        // Draw white text
   display.setCursor(0,4);                     // Start at top-left corner
-  
+
   display.print("Temperature: ");
   display.print(bme.readTemperature(), 2);
   display.println(" C");
@@ -139,8 +153,9 @@ void printReadings() {
   display.print(bme.readHumidity(), 2);
   display.println(" %");
 
-  display.print("CO2 Level: ");
-  display.print(map(analogRead(MQ135_Sensor) - offset, 0, 1024, 400, 5000));
+  co2Level = map(analogRead(PIN_MQ135) - offset, 0, 1024, 400, 5000);
+  display.print("co2 PPM: ");
+  display.print(co2Level);
   display.println(" PPM");
 
   getLocalTime(&timeinfo);                    // Get time info from the ntp server
@@ -148,11 +163,13 @@ void printReadings() {
   display.print(&timeinfo, "%b %d %Y, %H:%M:%S");
   display.display();
   
-  if (map(analogRead(MQ135_Sensor) - offset, 0, 1024, 400, 5000) >= 800) {
+  if (co2Level >= 1000) {
     digitalWrite(GREEN_LED, LOW);
     digitalWrite(RED_LED, HIGH);
+    digitalWrite(BLUE_LED, HIGH);
   } else {
     digitalWrite(GREEN_LED, HIGH);
     digitalWrite(RED_LED, LOW);
+    digitalWrite(BLUE_LED, HIGH);
   }
 }
